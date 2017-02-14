@@ -1,6 +1,6 @@
 /* eslint-env node */
 
-module.exports = function(environment) {
+module.exports = function (environment) {
   const ENV = {
     modulePrefix: 'dummy',
     environment: environment,
@@ -17,9 +17,7 @@ module.exports = function(environment) {
       }
     },
 
-    feathers: {
-      //socketUrl: null,
-    },
+    feathers: { socketUrl: process.env.FEATHERS_SOCKET_URL },
 
     APP: {
       // Here you can pass flags/options to your application instance

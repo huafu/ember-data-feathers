@@ -4,10 +4,10 @@ import DS from "ember-data";
 const { inject, RSVP, run, computed, assert } = Ember;
 
 const METHODS_MAP = {
-  create: 'created',
-  update: 'updated',
-  patch: 'patched',
-  delete: 'deleted',
+  create: { eventType: 'created', lock: true },
+  update: { eventType: 'updated', lock: false },
+  patch: { eventType: 'patched', lock: false },
+  remove: { eventType: 'removed', lock: true },
 };
 
 export default DS.Adapter.extend({
@@ -20,6 +20,8 @@ export default DS.Adapter.extend({
     this.debug = this.get('feathers').debug;
   },
 
+  // required methods when extending an adapter ===============================
+
   findRecord(store, type, id/*, snapshot*/) {
     return this.serviceCall(type, 'get', id);
   },
@@ -28,6 +30,30 @@ export default DS.Adapter.extend({
     const data = this.serialize(snapshot, { includeId: true });
     return this.serviceCall(type, 'create', data);
   },
+
+  updateRecord(store, type, snapshot) {
+    const data = this.serialize(snapshot, { includeId: true });
+    return this.serviceCall(type, 'update', snapshot.id, data);
+  },
+
+  deleteRecord(store, type, snapshot) {
+    //const data = this.serialize(snapshot, { includeId: true });
+    return this.serviceCall(type, 'remove', snapshot.id);
+  },
+
+  findAll() {
+
+  },
+
+  query() {
+
+  },
+
+  /*findMany() {
+
+   },*/
+
+  // end of required methods ==================================================
 
 
   feathersServiceFor(modelName) {
@@ -45,8 +71,8 @@ export default DS.Adapter.extend({
   },
 
   handleServiceResponse(type, method, resolver, data) {
-    if (METHODS_MAP.hasOwnProperty(method)) {
-      this.discardOnce(type.modelName, METHODS_MAP[method], data);
+    if (METHODS_MAP.hasOwnProperty(method) && METHODS_MAP[method].lock) {
+      this.discardOnce(type.modelName, METHODS_MAP[method].eventType, data);
     }
     resolver(data);
   },

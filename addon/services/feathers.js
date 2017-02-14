@@ -94,7 +94,7 @@ export default Ember.Service.extend({
           created: run.bind(this, 'handleServiceEvent', name, 'created', modelName),
           updated: run.bind(this, 'handleServiceEvent', name, 'updated', modelName),
           patched: run.bind(this, 'handleServiceEvent', name, 'patched', modelName),
-          deleted: run.bind(this, 'handleServiceEvent', name, 'deleted', modelName),
+          removed: run.bind(this, 'handleServiceEvent', name, 'removed', modelName),
         }
       };
       Object.keys(config.events).forEach((eventType) => {
