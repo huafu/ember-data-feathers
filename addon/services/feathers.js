@@ -2,7 +2,7 @@ import Ember from "ember";
 import { io, default as feathers } from "feathers";
 import FeathersSocketAdapter from "../adapters/feathers-socket";
 
-const { computed, inject, run, String:{ pluralize, singularize } } = Ember;
+const { computed, inject, run, String:{ pluralize, singularize }, RSVP } = Ember;
 
 /**
  * @class FeathersService
@@ -103,6 +103,20 @@ export default Ember.Service.extend({
       this.debug && this.debug(`listening for Feathers service ${name} bound to model ${modelName}`);
     }
     return service;
+  },
+
+  /**
+   * Make a service call
+   * @param {String} service
+   * @param {String} method
+   * @param {*} args
+   * @returns {RSVP.Promise}
+   */
+  serviceCall(service, method, ...args) {
+    return new RSVP.Promise((resolve, reject) => {
+      this.get(`services.${service}`)[method](...args)
+        .then(run.bind(null, resolve), run.bind(null, reject));
+    });
   },
 
   handleServiceEvent(serviceName, eventType, modelName, message) {
