@@ -33,7 +33,7 @@ export default DS.Adapter.extend({
 
   updateRecord(store, type, snapshot) {
     const data = this.serialize(snapshot, { includeId: true });
-    return this.serviceCall(type, 'update', snapshot.id, data);
+    return this.serviceCall(type, 'patch', snapshot.id, data);
   },
 
   deleteRecord(store, type, snapshot) {
@@ -41,12 +41,12 @@ export default DS.Adapter.extend({
     return this.serviceCall(type, 'remove', snapshot.id);
   },
 
-  findAll() {
-
+  findAll(store, type/*, sinceToken*/) {
+    return this.serviceCall(type, 'find', {});
   },
 
-  query() {
-
+  query(store, type, query/*, recordArray*/) {
+    return this.serviceCall(type, 'find', query);
   },
 
   /*findMany() {
@@ -92,18 +92,12 @@ export default DS.Adapter.extend({
 
     switch (eventType) {
       case 'created':
-        store.pushPayload(modelName, message);
-        break;
-
       case 'updated':
-        store.pushPayload(modelName, message);
-        break;
-
       case 'patched':
-        assert('Patch event is not handled yet');
+        store.push(store.normalize(modelName, message));
         break;
 
-      case 'deleted':
+      case 'removed':
         id = message[this.primaryKeyOf(modelName)];
         assert('The incoming message must have the id of deleted record but none was found', id);
         record = store.peekRecord(modelName, id);
@@ -121,7 +115,7 @@ export default DS.Adapter.extend({
         created: Object.create(null),
         updated: Object.create(null),
         patched: Object.create(null),
-        deleted: Object.create(null),
+        removed: Object.create(null),
       };
     }
   }).readOnly(),
