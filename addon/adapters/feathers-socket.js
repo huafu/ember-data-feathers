@@ -80,7 +80,7 @@ export default DS.Adapter.extend({
   findBelongsTo(store, snapshot, url/*, relationship*/) {
     const serviceCall = this.urlToServiceCall(url, snapshot.modelName);
     if (serviceCall) {
-      serviceCall()
+      return serviceCall()
         .then((response) => {
           if (serviceCall.meta.method === 'find') {
             const count = get(response, 'data.length');
@@ -90,13 +90,13 @@ export default DS.Adapter.extend({
           return response;
         });
     }
-    return this.serviceCall(snapshot.modelName, 'get', snapshot.id);
+    return this._super(...arguments);
   },
 
   findHasMany(store, snapshot, url/*, relationship*/) {
     const serviceCall = this.urlToServiceCall(url);
     if (serviceCall) {
-      serviceCall()
+      return serviceCall()
         .then((response) => {
           if (serviceCall.meta.method === 'get') {
             return response ? [response] : [];
@@ -104,9 +104,7 @@ export default DS.Adapter.extend({
           return response;
         });
     }
-    const { modelName } = snapshot;
-    const id = store.serializerFor(modelName).primaryKey;
-    return this.serviceCall(modelName, 'find', { query: { [id]: { $in: snapshot.id } } });
+    return this._super(...arguments);
   },
 
   findMany(store, type, ids/*, snapshots*/) {
