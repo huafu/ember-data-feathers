@@ -4,6 +4,13 @@ import FeathersSocketAdapter from "../adapters/feathers-socket";
 
 const { computed, inject, run, String:{ pluralize, singularize }, RSVP } = Ember;
 
+export function modelNameToServiceName(modelName) {
+  return pluralize(modelName);
+}
+export function serviceNameToModelName(modelName) {
+  return singularize(modelName);
+}
+
 /**
  * @class FeathersService
  */
@@ -77,12 +84,12 @@ export default Ember.Service.extend({
       return service;
     }
     if (modelName === undefined) {
-      const singularized = singularize(name);
+      const guessedModelName = serviceNameToModelName(name);
       try {
         const store = this.get('store');
         // next instruction will fail if no such model
-        store.modelFor(singularized);
-        modelName = store.adapterFor(singularized) instanceof FeathersSocketAdapter ? singularized : null;
+        store.modelFor(guessedModelName);
+        modelName = store.adapterFor(guessedModelName) instanceof FeathersSocketAdapter ? guessedModelName : null;
       } catch (e) {
         modelName = null;
       }
@@ -133,7 +140,7 @@ export default Ember.Service.extend({
   serviceForModelName(modelName) {
     const coupledModels = this.get('coupledModels');
     if (!coupledModels[modelName]) {
-      this.setupService(pluralize(modelName), { modelName });
+      this.setupService(modelNameToServiceName(modelName), { modelName });
     }
     return coupledModels[modelName].service;
   },
@@ -142,7 +149,7 @@ export default Ember.Service.extend({
     const coupledModels = this.get('coupledModels');
     let modelName = Object.keys(coupledModels).find(key => coupledModels[key].service === serviceName);
     if (!modelName) {
-      modelName = singularize[serviceName];
+      modelName = serviceNameToModelName(serviceName);
       this.setupService(serviceName, { modelName });
     }
     return modelName;
