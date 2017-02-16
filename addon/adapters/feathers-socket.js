@@ -1,7 +1,7 @@
 import Ember from "ember";
 import DS from "ember-data";
 
-const { inject, RSVP, run, computed, assert } = Ember;
+const { inject, RSVP, run, computed, assert, get, isString } = Ember;
 
 const METHODS_MAP = {
   create: { eventType: 'created', lock: true },
@@ -10,8 +10,27 @@ const METHODS_MAP = {
   remove: { eventType: 'removed', lock: true },
 };
 
+const RELATIONSHIP_LINK_PARSER = /^\/([a-z0-9_\/-]+)(?:\/([a-z0-9_:-]+)|\?(.+))$/i;
+
+const parseQueryString = (function () {
+  const search = /([^&=]+)=?([^&]*)/g;
+  const decode = function (s) {
+    return decodeURIComponent(s.replace(/\+/g, " "));
+  };
+
+  return function parseQueryString(queryString) {
+    let match;
+    const urlParams = {};
+    while ((match = search.exec(queryString))) {
+      urlParams[decode(match[1])] = decode(match[2]);
+    }
+  }
+})();
+
 export default DS.Adapter.extend({
   defaultSerializer: '-feathers-socket',
+
+  coalesceFindRequests: true,
 
   feathers: inject.service(),
 
@@ -56,28 +75,85 @@ export default DS.Adapter.extend({
   // end of required methods ==================================================
 
 
-  feathersServiceFor(modelName) {
-    return this.get('feathers').serviceForModel(modelName);
+  // able to load relationships from the socket as well
+
+  findBelongsTo(store, snapshot, url/*, relationship*/) {
+    const serviceCall = this.urlToServiceCall(url, snapshot.modelName);
+    if (serviceCall) {
+      serviceCall()
+        .then((response) => {
+          if (serviceCall.meta.method === 'find') {
+            const count = get(response, 'data.length');
+            assert(`Loaded a belongsTo record but got ${count} records`, count <= 1);
+            return response.data[0] || null;
+          }
+          return response;
+        });
+    }
+    return this.serviceCall(snapshot.modelName, 'get', snapshot.id);
   },
 
-  serviceCall(type, method, ...args) {
-    const service = this.feathersServiceFor(type.modelName);
+  findHasMany(store, snapshot, url/*, relationship*/) {
+    const serviceCall = this.urlToServiceCall(url);
+    if (serviceCall) {
+      serviceCall()
+        .then((response) => {
+          if (serviceCall.meta.method === 'get') {
+            return response ? [response] : [];
+          }
+          return response;
+        });
+    }
+    const { modelName } = snapshot;
+    const id = store.serializerFor(modelName).primaryKey;
+    return this.serviceCall(modelName, 'find', { query: { [id]: { $in: snapshot.id } } });
+  },
+
+  findMany(store, type, ids/*, snapshots*/) {
+    const { modelName } = type;
+    const id = store.serializerFor(modelName).primaryKey;
+    return this.serviceCall(modelName, 'find', { query: { [id]: { $in: ids } } });
+  },
+
+  urlToServiceCall(url, modelName) {
+    let matches, invoker;
+    if (url && (matches = url.match(RELATIONSHIP_LINK_PARSER))) {
+      const meta = {
+        service: matches[1],
+        modelName: modelName || this.get('feathers').modelNameForService(matches[1]),
+        method: matches[2] ? 'get' : 'find',
+        arguments: [matches[2] || parseQueryString(matches[3])],
+      };
+      invoker = this.serviceCall.bind(this, meta.modelName, meta.method, ...meta.arguments);
+      invoker.meta = meta;
+    }
+    return invoker;
+  },
+
+
+  feathersServiceFor(modelName) {
+    return this.get('feathers').serviceForModelName(modelName);
+  },
+
+  serviceCall(typeOrModelName, method, ...args) {
+    const modelName = isString(typeOrModelName) ? typeOrModelName : typeOrModelName.modelName;
+    const service = this.feathersServiceFor(modelName);
     return new RSVP.Promise((resolve, reject) => {
       service[method](...args).then(
-        run.bind(this, 'handleServiceResponse', type, method, resolve),
-        run.bind(this, 'handleServiceError', type, method, reject)
+        run.bind(this, 'handleServiceResponse', modelName, method, resolve),
+        run.bind(this, 'handleServiceError', modelName, method, reject)
       );
     });
   },
 
-  handleServiceResponse(type, method, resolver, data) {
+  handleServiceResponse(modelName, method, resolver, data) {
     if (METHODS_MAP.hasOwnProperty(method) && METHODS_MAP[method].lock) {
-      this.discardOnce(type.modelName, METHODS_MAP[method].eventType, data);
+      this.discardOnce(modelName, METHODS_MAP[method].eventType, data);
     }
     resolver(data);
   },
 
-  handleServiceError(type, method, rejecter, error) {
+  handleServiceError(modelName, method, rejecter, error) {
     rejecter(error);
   },
 

@@ -4,6 +4,8 @@ import DS from "ember-data";
 const { getProperties } = Ember;
 
 export default DS.JSONSerializer.extend({
+  primaryKey: '_id',
+
   normalizeArrayResponse(store, primaryModelClass, payload/*, id, requestType*/) {
     let documentHash = {
       data: null,

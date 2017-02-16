@@ -130,11 +130,21 @@ export default Ember.Service.extend({
     }
   },
 
-  serviceForModel(modelName) {
+  serviceForModelName(modelName) {
     const coupledModels = this.get('coupledModels');
     if (!coupledModels[modelName]) {
       this.setupService(pluralize(modelName), { modelName });
     }
     return coupledModels[modelName].service;
-  }
+  },
+
+  modelNameForService(serviceName) {
+    const coupledModels = this.get('coupledModels');
+    let modelName = Object.keys(coupledModels).find(key => coupledModels[key].service === serviceName);
+    if (!modelName) {
+      modelName = singularize[serviceName];
+      this.setupService(serviceName, { modelName });
+    }
+    return modelName;
+  },
 });
