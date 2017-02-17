@@ -31,6 +31,7 @@ export default Ember.Service.extend({
     }
   }),
 
+  app: computed.alias('client'),
   client: computed('socket', {
     get() {
       return feathers()
