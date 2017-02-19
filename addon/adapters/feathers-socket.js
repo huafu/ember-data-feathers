@@ -1,7 +1,7 @@
 import Ember from "ember";
 import DS from "ember-data";
 
-const { inject, RSVP, run, computed, assert, get, isString } = Ember;
+const { inject, RSVP, run, computed, assert, get, typeOf } = Ember;
 
 const METHODS_MAP = {
   create: { eventType: 'created', lock: true },
@@ -143,7 +143,7 @@ export default DS.Adapter.extend({
   },
 
   serviceCall(typeOrModelName, method, ...args) {
-    const modelName = isString(typeOrModelName) ? typeOrModelName : typeOrModelName.modelName;
+    const modelName = typeOf(typeOrModelName) === 'string' ? typeOrModelName : typeOrModelName.modelName;
     const service = this.feathersServiceFor(modelName);
     return new RSVP.Promise((resolve, reject) => {
       service[method](...args).then(

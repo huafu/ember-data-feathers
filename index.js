@@ -1,5 +1,7 @@
 /* eslint-env node */
 'use strict';
+const sysPath = require('path');
+const packageJson = require(sysPath.join(__dirname, 'package.json'));
 
 module.exports = {
   name: 'ember-data-feathers',
@@ -16,5 +18,11 @@ module.exports = {
         feathers: ['default', 'io']
       }
     });
-  }
+  },
+
+  isDevelopingAddon(){
+    // return true if the package doesn't have `_id`
+    // npm adds `_id` into the package.json when it is installed
+    return !packageJson._id;
+  },
 };
