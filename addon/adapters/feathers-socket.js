@@ -68,6 +68,15 @@ export default DS.Adapter.extend({
     return this.serviceCall(type, 'find', query);
   },
 
+  queryRecord(store, type, query/*, recordArray*/) {
+    return this.serviceCall(type, 'find', query)
+      .then((response) => {
+        const count = get(response, 'data.length');
+        assert(`Loaded a unique record but got ${count} records`, count <= 1);
+        return response.data[0] || null;
+      });
+  },
+
   /*findMany() {
 
    },*/
