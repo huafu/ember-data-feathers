@@ -1,30 +1,34 @@
 import Ember from "ember";
 import DS from "ember-data";
 
-const { getProperties } = Ember;
+const { getProperties, isArray } = Ember;
 
 export default DS.JSONSerializer.extend({
   primaryKey: '_id',
 
   normalizeArrayResponse(store, primaryModelClass, payload/*, id, requestType*/) {
+    let items;
     let documentHash = {
       data: null,
       included: [],
     };
 
-    documentHash.meta = getProperties(payload, 'skip', 'limit', 'total');
-    delete payload.skip;
-    delete payload.limit;
-    delete payload.total;
+    if (payload.data && isArray(payload.data)) {
+      documentHash.meta = getProperties(payload, 'skip', 'limit', 'total');
+      delete payload.skip;
+      delete payload.limit;
+      delete payload.total;
+      items = payload.data;
+    } else {
+      items = payload;
+    }
 
-    const payloadData = payload.data;
-    const ret = new Array(payloadData.length);
-    for (let i = 0, l = payloadData.length; i < l; i++) {
-      let item = payloadData[i];
+    const ret = new Array(items.length);
+    for (let i = 0, l = items.length; i < l; i++) {
+      let item = items[i];
       let { data } = this.normalize(primaryModelClass, item);
       ret[i] = data;
     }
-
     documentHash.data = ret;
 
     return documentHash;
