@@ -26,7 +26,10 @@ export default DS.JSONSerializer.extend({
     const ret = new Array(items.length);
     for (let i = 0, l = items.length; i < l; i++) {
       let item = items[i];
-      let { data } = this.normalize(primaryModelClass, item);
+      let { data, included } = this.normalize(primaryModelClass, item);
+      if (included) {
+        documentHash.included.push(...included);
+      }
       ret[i] = data;
     }
     documentHash.data = ret;
