@@ -13,17 +13,44 @@ const METHODS_MAP = {
 const RELATIONSHIP_LINK_PARSER = /^\/([a-z0-9_\/-]+)(?:\/([a-z0-9_:-]+)|\?(.+))$/i;
 
 const parseQueryString = (function () {
-  const search = /([^&=]+)=?([^&]*)/g;
-  const decode = function (s) {
-    return decodeURIComponent(s.replace(/\+/g, " "));
-  };
+  const setValue = function (root, path, value) {
+    if (path.length > 1) {
+      const dir = path.shift();
+      if (typeof root[dir] == 'undefined') {
+        root[dir] = path[0] == '' ? [] : {};
+      }
 
-  return function parseQueryString(queryString) {
-    let match;
-    const urlParams = {};
-    while ((match = search.exec(queryString))) {
-      urlParams[decode(match[1])] = decode(match[2]);
+      arguments.callee(root[dir], path, value);
+    } else {
+      if (root instanceof Array) {
+        root.push(value);
+      } else {
+        root[path] = value;
+      }
     }
+  };
+  return function parseQueryString(query) {
+    const nvp = query.split('&');
+    const data = {};
+    for (let i = 0; i < nvp.length; i++) {
+      const pair = nvp[i].split('=');
+      const name = decodeURIComponent(pair[0]);
+      const value = decodeURIComponent(pair[1]);
+
+      let path = name.match(/(^[^\[]+)(\[.*\]$)?/);
+      const first = path[1];
+      if (path[2]) {
+        //case of 'array[level1]' || 'array[level1][level2]'
+        path = path[2].match(/(?=\[(.*)\]$)/)[1].split('][')
+      } else {
+        //case of 'name'
+        path = [];
+      }
+      path.unshift(first);
+
+      setValue(data, path, value);
+    }
+    return data;
   }
 })();
 
@@ -129,7 +156,7 @@ export default DS.Adapter.extend({
         service: matches[1],
         modelName: modelName || this.get('feathers').modelNameForService(matches[1]),
         method: matches[2] ? 'get' : 'find',
-        arguments: [matches[2] || parseQueryString(matches[3])],
+        arguments: [matches[2] || parseQueryString(decodeURI(matches[3]))],
       };
       invoker = this.serviceCall.bind(this, meta.modelName, meta.method, ...meta.arguments);
       invoker.meta = meta;
