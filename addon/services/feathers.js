@@ -50,11 +50,11 @@ export default Ember.Service.extend({
 
   services: computed({
     get() {
-      const svc = this;
-      return Ember.CoreObject.extend({
+      const owner = this;
+      return Ember.Object.extend({
         unknownProperty(key) {
-          if (!svc.isDestroyed && !svc.isDestroying) {
-            const service = svc.setupService(key);
+          if (!owner.isDestroyed && !owner.isDestroying) {
+            const service = owner.setupService(key);
             this.set(key, service);
             return service;
           }
@@ -78,7 +78,7 @@ export default Ember.Service.extend({
     this._super(...arguments);
   },
 
-  setupService(name, { modelName }) {
+  setupService(name, { modelName } = {}) {
     const service = this.get('client').service(name);
     const coupledModels = this.get('coupledModels');
     if (coupledModels[name]) {
