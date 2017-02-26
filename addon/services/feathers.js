@@ -53,7 +53,7 @@ export default Ember.Service.extend({
 
   handlePing() {
     if (!this.isDestroyed) {
-      this.set('lastPing', Date.now());
+      this.set('lastPingAt', Date.now());
     }
   },
 
@@ -113,8 +113,12 @@ export default Ember.Service.extend({
       });
   },
 
-  lastPing: null,
-  lastEvent: null,
+  lastPingAt: null,
+  lastEventAt: null,
+  lastResponseAt: null,
+  lastErrorAt: null,
+  lastBeats: computed.collect('lastPingAt', 'lastEventAt', 'lastResponseAt', 'lastErrorAt'),
+  lastBeatAt: computed.max('lastBeats'),
   _isRunning: 0,
   isRunning: computed({
     get() {
@@ -217,6 +221,7 @@ export default Ember.Service.extend({
             run.bind(this, (response) => {
               logStat(false);
               this.set('isRunning', false);
+              this.set('lastResponseAt', stat.end);
               this.debug && this.debug(
                 `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`, args[0], response
               );
@@ -225,6 +230,8 @@ export default Ember.Service.extend({
             run.bind(this, (error) => {
               logStat(true);
               this.set('isRunning', false);
+              // TODO: do not set this if the error is a timeout
+              this.set('lastErrorAt', stat.end);
               this.debug && this.debug(
                 `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, args[0], error
               );
@@ -236,7 +243,7 @@ export default Ember.Service.extend({
   },
 
   handleServiceEvent(serviceName, eventType, modelName, message) {
-    this.set('lastEvent', Date.now());
+    this.set('lastEventAt', Date.now());
     this.debug && this.debug(
       `[${serviceName}][${eventType}] received %O`,
       message
