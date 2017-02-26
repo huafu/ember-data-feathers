@@ -169,26 +169,30 @@ export default DS.Adapter.extend({
     return this.get('feathers').serviceForModelName(modelName);
   },
 
-  serviceCall(typeOrModelName, method, ...args) {
-    const modelName = typeOf(typeOrModelName) === 'string' ? typeOrModelName : typeOrModelName.modelName;
-    const service = this.feathersServiceFor(modelName);
-    return new RSVP.Promise((resolve, reject) => {
-      service[method](...args).then(
-        run.bind(this, 'handleServiceResponse', modelName, method, resolve),
-        run.bind(this, 'handleServiceError', modelName, method, reject)
-      );
-    });
+
+  feathersServiceNameFor(modelName) {
+    return this.get('feathers').serviceNameForModelName(modelName);
   },
 
-  handleServiceResponse(modelName, method, resolver, data) {
+  serviceCall(typeOrModelName, method, ...args) {
+    const modelName = typeOf(typeOrModelName) === 'string' ? typeOrModelName : typeOrModelName.modelName;
+    const serviceName = this.feathersServiceNameFor(modelName);
+    return this.get('feathers').serviceCall(serviceName, method, ...args)
+      .then(
+        run.bind(this, 'handleServiceResponse', modelName, method),
+        run.bind(this, 'handleServiceError', modelName, method)
+      );
+  },
+
+  handleServiceResponse(modelName, method, data) {
     if (METHODS_MAP.hasOwnProperty(method) && METHODS_MAP[method].lock) {
       this.discardOnce(modelName, METHODS_MAP[method].eventType, data);
     }
-    resolver(data);
+    return data;
   },
 
-  handleServiceError(modelName, method, rejecter, error) {
-    rejecter(error);
+  handleServiceError(modelName, method, error) {
+    return error;
   },
 
   handleServiceEvent(eventType, modelName, message) {

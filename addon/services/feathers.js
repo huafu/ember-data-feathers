@@ -98,6 +98,7 @@ export default Ember.Service.extend({
     if (modelName) {
       const config = coupledModels[modelName] = {
         service,
+        serviceName: name,
         events: {
           created: run.bind(this, 'handleServiceEvent', name, 'created', modelName),
           updated: run.bind(this, 'handleServiceEvent', name, 'updated', modelName),
@@ -115,21 +116,34 @@ export default Ember.Service.extend({
 
   /**
    * Make a service call
-   * @param {String} service
+   * @param {String} serviceName
    * @param {String} method
    * @param {*} args
    * @returns {RSVP.Promise}
    */
-  serviceCall(service, method, ...args) {
+  serviceCall(serviceName, method, ...args) {
     return new RSVP.Promise((resolve, reject) => {
-      this.get(`services.${service}`)[method](...args)
-        .then(run.bind(null, resolve), run.bind(null, reject));
+      this.get(`services.${serviceName}`)[method](...args)
+        .then(
+          run.bind(this, (response) => {
+            this.debug && this.debug(
+              `[${serviceName}][${method}] sent %O <=> received %O`, args[0], response
+            );
+            resolve(response);
+          }),
+          run.bind(this, (error) => {
+            this.debug && this.debug(
+              `[${serviceName}][${method}] sent %O <=> ERROR %O`, args[0], error
+            );
+            reject(error);
+          })
+        );
     });
   },
 
   handleServiceEvent(serviceName, eventType, modelName, message) {
     this.debug && this.debug(
-      `[${serviceName}] received event ${eventType}${modelName ? ' (mapped to ' + modelName + ' model)' : ''}: %O`,
+      `[${serviceName}][${eventType}] received %O`,
       message
     );
     if (modelName) {
@@ -144,6 +158,14 @@ export default Ember.Service.extend({
       this.setupService(modelNameToServiceName(modelName), { modelName });
     }
     return coupledModels[modelName].service;
+  },
+
+  serviceNameForModelName(modelName) {
+    const coupledModels = this.get('coupledModels');
+    if (!coupledModels[modelName]) {
+      this.setupService(modelNameToServiceName(modelName), { modelName });
+    }
+    return coupledModels[modelName].serviceName;
   },
 
   modelNameForService(serviceName) {
