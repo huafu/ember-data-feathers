@@ -17,7 +17,10 @@ module.exports = function (environment) {
       }
     },
 
-    feathers: { socketUrl: process.env.FEATHERS_SOCKET_URL },
+    feathers: {
+      socketUrl: process.env.FEATHERS_SOCKET_URL,
+      queueMethodCalls: Boolean(process.env.FEATHERS_QUEUE_METHOD_CALLS),
+    },
 
     APP: {
       // Here you can pass flags/options to your application instance

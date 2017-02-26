@@ -2,7 +2,7 @@ import Ember from "ember";
 import { io, default as feathers } from "feathers";
 import FeathersSocketAdapter from "../adapters/feathers-socket";
 
-const { computed, inject, run, String:{ pluralize, singularize }, RSVP } = Ember;
+const { computed, inject, run, String:{ pluralize, singularize }, RSVP, isArray } = Ember;
 
 export function modelNameToServiceName(modelName) {
   return pluralize(modelName);
@@ -18,6 +18,7 @@ export default Ember.Service.extend({
   store: inject.service(),
 
   socketUrl: computed.reads('config.socketUrl'),
+  queueMethodCalls: computed.reads('config.queueMethodCalls'),
 
   socket: computed('socketUrl', {
     get() {
@@ -34,8 +35,10 @@ export default Ember.Service.extend({
   app: computed.alias('client'),
   client: computed('socket', {
     get() {
+      const socket = this.get('socket');
+      socket.on('pong', run.bind(this, 'handlePing'));
       return feathers()
-        .configure(feathers.socketio(this.get('socket')))
+        .configure(feathers.socketio(socket))
         .configure(feathers.hooks())
         // Use localStorage to store our login token
         .configure(feathers.authentication({
@@ -46,6 +49,80 @@ export default Ember.Service.extend({
       // TODO: teardown old object
       return value;
     },
+  }),
+
+  handlePing() {
+    if (!this.isDestroyed) {
+      this.set('lastPing', Date.now());
+    }
+  },
+
+  _stats: computed({
+    get() {
+      return [];
+    },
+  }),
+
+  stats: computed({
+    get() {
+      const stats = this.get('_stats');
+      const timeSum = (items) => items.mapBy('time').reduce((sum, t) => sum + t, 0);
+      const timeAvg = (items) => timeSum(items) / items.length;
+      const mapBy = (items, key) => {
+        return items.reduce((map, stat) => {
+          if (!map[stat[key]]) {
+            map[stat[key]] = [stat];
+          } else {
+            map[stat[key]].push(stat);
+          }
+          return map;
+        }, {});
+      };
+      const compute = (items) => {
+        if (isArray(items)) {
+          return {
+            count: items.length,
+            errorCount: items.filterBy('error', true).length,
+            successCount: items.filterBy('error', false).length,
+            timeAverage: timeAvg(items),
+            timeTotal: timeSum(items),
+          };
+        }
+        const set = {};
+        Object.keys(items).forEach(key => set[key] = compute(items[key]));
+        return set;
+      };
+
+      const res = compute(stats);
+      res.services = compute(mapBy(stats, 'service'));
+      res.methods = compute(mapBy(stats, 'method'));
+      return res;
+    }
+  }).readOnly().volatile(),
+
+  _runningProcess: RSVP.resolve(),
+  enqueue(process) {
+    if (!this.get('queueMethodCalls')) {
+      return process();
+    }
+    return this._runningProcess = this._runningProcess
+      .then(process)
+      .catch((error) => {
+        this._runningProcess = process();
+        return RSVP.reject(error);
+      });
+  },
+
+  lastPing: null,
+  lastEvent: null,
+  _isRunning: 0,
+  isRunning: computed({
+    get() {
+      return this.get('_isRunning') > 0;
+    },
+    set(key, value) {
+      return this.incrementProperty('_isRunning', value ? 1 : -1) > 0;
+    }
   }),
 
   services: computed({
@@ -122,26 +199,44 @@ export default Ember.Service.extend({
    * @returns {RSVP.Promise}
    */
   serviceCall(serviceName, method, ...args) {
-    return new RSVP.Promise((resolve, reject) => {
-      this.get(`services.${serviceName}`)[method](...args)
-        .then(
-          run.bind(this, (response) => {
-            this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> received %O`, args[0], response
-            );
-            resolve(response);
-          }),
-          run.bind(this, (error) => {
-            this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> ERROR %O`, args[0], error
-            );
-            reject(error);
-          })
-        );
+    return this.enqueue(() => {
+      return new RSVP.Promise((resolve, reject) => {
+        const stat = Object.create(null);
+        stat.service = serviceName;
+        stat.method = method;
+        stat.start = Date.now();
+        const logStat = (isError) => {
+          stat.end = Date.now();
+          stat.time = stat.end - stat.start;
+          stat.error = isError;
+          this.get('_stats').push(stat);
+        };
+        this.set('isRunning', true);
+        this.get(`services.${serviceName}`)[method](...args)
+          .then(
+            run.bind(this, (response) => {
+              logStat(false);
+              this.set('isRunning', false);
+              this.debug && this.debug(
+                `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`, args[0], response
+              );
+              resolve(response);
+            }),
+            run.bind(this, (error) => {
+              logStat(true);
+              this.set('isRunning', false);
+              this.debug && this.debug(
+                `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, args[0], error
+              );
+              reject(error);
+            })
+          );
+      });
     });
   },
 
   handleServiceEvent(serviceName, eventType, modelName, message) {
+    this.set('lastEvent', Date.now());
     this.debug && this.debug(
       `[${serviceName}][${eventType}] received %O`,
       message
