@@ -18,6 +18,7 @@ export default Ember.Service.extend({
   store: inject.service(),
 
   socketUrl: computed.reads('config.socketUrl'),
+  updateUsesPatch: computed.reads('config.updateUsesPatch'),
   queueMethodCalls: computed.reads('config.queueMethodCalls'),
 
   socket: computed('socketUrl', {

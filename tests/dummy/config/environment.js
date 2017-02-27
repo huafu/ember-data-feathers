@@ -20,6 +20,7 @@ module.exports = function (environment) {
     feathers: {
       socketUrl: process.env.FEATHERS_SOCKET_URL,
       queueMethodCalls: Boolean(process.env.FEATHERS_QUEUE_METHOD_CALLS),
+      updateUsesPatch: Boolean(process.env.FEATHERS_UPDATE_USES_PATCH),
     },
 
     APP: {

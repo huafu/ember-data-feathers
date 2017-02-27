@@ -79,7 +79,7 @@ export default DS.Adapter.extend({
 
   updateRecord(store, type, snapshot) {
     const data = this.serialize(snapshot, { includeId: true });
-    return this.serviceCall(type, 'patch', snapshot.id, data);
+    return this.serviceCall(type, this.get('feathers.updateUsesPatch') ? 'patch' : 'update', snapshot.id, data);
   },
 
   deleteRecord(store, type, snapshot) {
@@ -192,7 +192,8 @@ export default DS.Adapter.extend({
   },
 
   handleServiceError(modelName, method, error) {
-    return error;
+    // TODO: make the error ember friendly
+    return RSVP.reject(error);
   },
 
   handleServiceEvent(eventType, modelName, message) {
