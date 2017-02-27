@@ -154,7 +154,7 @@ export default DS.Adapter.extend({
     if (url && (matches = url.match(RELATIONSHIP_LINK_PARSER))) {
       const meta = {
         service: matches[1],
-        modelName: modelName || this.get('feathers').modelNameForService(matches[1]),
+        modelName: modelName || this.get('feathers').modelNameForServiceName(matches[1]),
         method: matches[2] ? 'get' : 'find',
         arguments: [matches[2] || parseQueryString(decodeURI(matches[3]))],
       };

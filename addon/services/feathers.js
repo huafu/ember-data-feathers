@@ -4,6 +4,8 @@ import FeathersSocketAdapter from "../adapters/feathers-socket";
 
 const { computed, inject, run, String:{ pluralize, singularize }, RSVP, isArray } = Ember;
 
+const TIMEOUT_REGEXP = /^Timeout of \d+ms /;
+
 export function modelNameToServiceName(modelName) {
   return pluralize(modelName);
 }
@@ -32,7 +34,6 @@ export default Ember.Service.extend({
       return value;
     }
   }),
-
   app: computed.alias('client'),
   client: computed('socket', {
     get() {
@@ -63,11 +64,11 @@ export default Ember.Service.extend({
       return [];
     },
   }),
-
   stats: computed({
     get() {
       const stats = this.get('_stats');
       const timeSum = (items) => items.mapBy('time').reduce((sum, t) => sum + t, 0);
+      const timeoutsSum = (items) => items.mapBy('timeouts').reduce((sum, t) => sum + t, 0);
       const timeAvg = (items) => timeSum(items) / items.length;
       const mapBy = (items, key) => {
         return items.reduce((map, stat) => {
@@ -81,12 +82,15 @@ export default Ember.Service.extend({
       };
       const compute = (items) => {
         if (isArray(items)) {
+          const errorCount = items.filterBy('error').length;
+          const count = items.length;
           return {
-            count: items.length,
-            errorCount: items.filterBy('error', true).length,
-            successCount: items.filterBy('error', false).length,
+            count,
+            errorCount,
+            successCount: count - errorCount,
             timeAverage: timeAvg(items),
             timeTotal: timeSum(items),
+            timeouts: timeoutsSum(items),
           };
         }
         const set = {};
@@ -97,6 +101,7 @@ export default Ember.Service.extend({
       const res = compute(stats);
       res.services = compute(mapBy(stats, 'service'));
       res.methods = compute(mapBy(stats, 'method'));
+      res.all = stats;
       return res;
     }
   }).readOnly().volatile(),
@@ -118,6 +123,7 @@ export default Ember.Service.extend({
   lastEventAt: null,
   lastResponseAt: null,
   lastErrorAt: null,
+  lastTimeoutAt: null,
   lastBeats: computed.collect('lastPingAt', 'lastEventAt', 'lastResponseAt', 'lastErrorAt'),
   lastBeatAt: computed.max('lastBeats'),
   _isRunning: 0,
@@ -163,7 +169,7 @@ export default Ember.Service.extend({
   setupService(name, { modelName } = {}) {
     const service = this.get('client').service(name);
     const coupledModels = this.get('coupledModels');
-    if (coupledModels[name]) {
+    if (modelName === null || modelName && coupledModels[modelName]) {
       return service;
     }
     if (modelName === undefined) {
@@ -177,7 +183,7 @@ export default Ember.Service.extend({
         modelName = null;
       }
     }
-    if (modelName) {
+    if (modelName && !coupledModels[modelName]) {
       const config = coupledModels[modelName] = {
         service,
         serviceName: name,
@@ -189,9 +195,10 @@ export default Ember.Service.extend({
         }
       };
       Object.keys(config.events).forEach((eventType) => {
+        this.debug && this.debug(`Setting up listener for ${name}.${eventType}`);
         service.on(eventType, config.events[eventType]);
       });
-      this.debug && this.debug(`listening for Feathers service ${name} bound to model ${modelName}`);
+      this.debug && this.debug(`Feathers service ${name} bound to model ${modelName}`);
     }
     return service;
   },
@@ -207,20 +214,27 @@ export default Ember.Service.extend({
     return this.enqueue(() => {
       return new RSVP.Promise((resolve, reject) => {
         const stat = Object.create(null);
+        this.set('isRunning', true);
         stat.service = serviceName;
         stat.method = method;
+        stat.timeouts = 0;
         stat.start = Date.now();
-        const logStat = (isError) => {
+        const logStat = (error) => {
           stat.end = Date.now();
           stat.time = stat.end - stat.start;
-          stat.error = isError;
+          stat.error = error;
+          if (error) {
+            if (TIMEOUT_REGEXP.test(error.message)) {
+              stat.timeouts++;
+              this.set('lastTimeoutAt', stat.end);
+            }
+          }
           this.get('_stats').push(stat);
         };
-        this.set('isRunning', true);
         this.get(`services.${serviceName}`)[method](...args)
           .then(
             run.bind(this, (response) => {
-              logStat(false);
+              logStat();
               this.set('isRunning', false);
               this.set('lastResponseAt', stat.end);
               this.debug && this.debug(
@@ -229,9 +243,8 @@ export default Ember.Service.extend({
               resolve(response);
             }),
             run.bind(this, (error) => {
-              logStat(true);
+              logStat(error);
               this.set('isRunning', false);
-              // TODO: do not set this if the error is a timeout
               this.set('lastErrorAt', stat.end);
               this.debug && this.debug(
                 `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, args[0], error
@@ -271,9 +284,9 @@ export default Ember.Service.extend({
     return coupledModels[modelName].serviceName;
   },
 
-  modelNameForService(serviceName) {
+  modelNameForServiceName(serviceName) {
     const coupledModels = this.get('coupledModels');
-    let modelName = Object.keys(coupledModels).find(key => coupledModels[key].service === serviceName);
+    let modelName = Object.keys(coupledModels).find(key => coupledModels[key].serviceName === serviceName);
     if (!modelName) {
       modelName = serviceNameToModelName(serviceName);
       this.setupService(serviceName, { modelName });
