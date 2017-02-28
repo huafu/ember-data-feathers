@@ -13,6 +13,10 @@ export function serviceNameToModelName(modelName) {
   return singularize(modelName);
 }
 
+function uniqueItemOrAll(array) {
+  return array.length === 1 ? array[0] : array;
+}
+
 /**
  * @class FeathersService
  */
@@ -238,7 +242,7 @@ export default Ember.Service.extend({
               this.set('isRunning', false);
               this.set('lastResponseAt', stat.end);
               this.debug && this.debug(
-                `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`, args[0], response
+                `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`, uniqueItemOrAll(args), response
               );
               resolve(response);
             }),
@@ -247,7 +251,7 @@ export default Ember.Service.extend({
               this.set('isRunning', false);
               this.set('lastErrorAt', stat.end);
               this.debug && this.debug(
-                `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, args[0], error
+                `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, uniqueItemOrAll(args), error
               );
               reject(error);
             })
