@@ -54,6 +54,10 @@ const parseQueryString = (function () {
   }
 })();
 
+/**
+ * @class FeathersSocketAdapter
+ * @extends {DS.Adapter}
+ */
 export default DS.Adapter.extend({
   defaultSerializer: '-feathers-socket',
 
@@ -104,9 +108,14 @@ export default DS.Adapter.extend({
       });
   },
 
-  /*findMany() {
 
-   },*/
+  findMany(store, type, ids/*, snapshots*/) {
+    const { modelName } = type;
+    const id = store.serializerFor(modelName).primaryKey;
+    return this.serviceCall(modelName, 'find', { query: { [id]: { $in: ids } } });
+  },
+
+
 
   // end of required methods ==================================================
 
@@ -141,12 +150,6 @@ export default DS.Adapter.extend({
         });
     }
     return this._super(...arguments);
-  },
-
-  findMany(store, type, ids/*, snapshots*/) {
-    const { modelName } = type;
-    const id = store.serializerFor(modelName).primaryKey;
-    return this.serviceCall(modelName, 'find', { query: { [id]: { $in: ids } } });
   },
 
   urlToServiceCall(url, modelName) {
