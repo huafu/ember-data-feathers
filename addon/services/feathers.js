@@ -131,9 +131,10 @@ class ServiceMeta {
 
 ['find', 'get', 'create', 'update', 'patch', 'remove'].forEach((method) => {
   Object.defineProperty(ServiceMeta.prototype, method, {
-    value: function () {
+    value: function (...args) {
+      const { service } = this;
       return new RSVP.Promise((resolve, reject) => {
-        this.service[method].then(run.bind(null, resolve), run.bind(null, reject));
+        service[method](...args).then(run.bind(null, resolve), run.bind(null, reject));
       });
     }
   })
