@@ -206,18 +206,21 @@ export default DS.Adapter.extend({
     }
 
     const store = this.get('store');
-    let id, record;
+    let id, record, an;
 
     switch (eventType) {
       case 'created':
       case 'updated':
       case 'patched':
+        an = eventType === 'updated' ? 'an' : 'a';
+        this.debug && this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
         store.push(store.normalize(modelName, message));
         break;
 
       case 'removed':
         id = message[this.primaryKeyOf(modelName)];
         assert('The incoming message must have the id of deleted record but none was found', id);
+        this.debug && this.debug(`[${modelName}] unloading a deleted record from the store: %O`, message);
         record = store.peekRecord(modelName, id);
         record && store.unloadRecord(record);
         break;

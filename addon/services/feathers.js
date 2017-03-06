@@ -22,9 +22,9 @@ function uniqueItemOrAll(array) {
  * @class ServiceMeta
  * @property {ServiceRegistry} registry
  * @property {String} name
- * @property {String} modelname
+ * @property {String} modelName
  * @property {Object} service
- * @property {Function} eventsHandler
+ * @property {{created: Function, updated: Function, patched: Function, removed: Function}} eventHandlers
  *
  * @method {RSVP.Promise} find({{}} params)
  * @method {RSVP.Promise} get({String} id, {{}} [params])
@@ -47,7 +47,10 @@ class ServiceMeta {
 
     this.name = name;
     this.service = service;
-    this.eventsHandler = eventsHandler.bind(null, this);
+    this.eventHandlers = Object.create(null);
+    EVENT_TYPES.forEach((type) => {
+      this.eventHandlers[type] = eventsHandler.bind(null, this, type);
+    });
     this.registry = registry;
     this.owner = registry.owner;
 
@@ -74,7 +77,7 @@ class ServiceMeta {
    */
   setModelName(modelName, store = this.registry.owner.get('store')) {
     if (modelName) {
-      this.modelname = modelName;
+      this.modelName = modelName;
       this.storeAdapter = store.adapterFor(modelName);
     }
     return this;
@@ -87,7 +90,7 @@ class ServiceMeta {
    */
   setupEvents() {
     EVENT_TYPES.forEach((eventType) => {
-      this.service.on(eventType, this.eventsHandler);
+      this.service.on(eventType, this.eventHandlers[eventType]);
     });
     return this;
   }
@@ -99,7 +102,7 @@ class ServiceMeta {
    */
   teardownEvents() {
     EVENT_TYPES.forEach((eventType) => {
-      this.service.removeListener(eventType, this.eventsHandler);
+      this.service.removeListener(eventType, this.eventHandlers[eventType]);
     });
     return this;
   }
@@ -421,7 +424,7 @@ export default Ember.Service.extend(Ember.Evented, {
   setupService(name, { modelName } = {}) {
     const service = this.get('client').service(name);
     const registry = this.get('servicesRegistry');
-    return registry.register(name, { service, modelName, eventsHandler: run.bind(this, 'handleServiceEvent', name) });
+    return registry.register(name, { service, modelName, eventsHandler: run.bind(this, 'handleServiceEvent') });
   },
 
   /**
@@ -477,14 +480,15 @@ export default Ember.Service.extend(Ember.Evented, {
   /**
    * Handles a service event
    * @param {ServiceMeta} meta
+   * @param {String} eventType
    * @param {*} message
    */
-  handleServiceEvent(meta, message)
+  handleServiceEvent(meta, eventType, message)
   {
     this.set('lastEventAt', Date.now());
-    this.debug && this.debug(`[${meta.name}][${event.type}] received %O`, message);
+    this.debug && this.debug(`[${meta.name}][${eventType}] received %O`, message);
     if (meta.modelName) {
-      meta.storeAdapter instanceof FeathersSocketAdapter && meta.storeAdapter.handleServiceEvent(event.type, meta.modelname, message);
+      meta.storeAdapter instanceof FeathersSocketAdapter && meta.storeAdapter.handleServiceEvent(eventType, meta.modelName, message);
     }
   },
 
@@ -519,7 +523,7 @@ export default Ember.Service.extend(Ember.Evented, {
   {
     const registry = this.get('servicesRegistry');
     const meta = registry.forName(serviceName);
-    return (meta || this.setupService(serviceName, { modelName: modelNameToServiceName(serviceName) })).modelname;
+    return (meta || this.setupService(serviceName)).modelName;
   },
 
   /**
@@ -535,7 +539,7 @@ export default Ember.Service.extend(Ember.Evented, {
   },
 
   /**
-   * Logout sinceing the extra data if necessary
+   * Logout sending the extra data if necessary
    * @param {*} [data]
    * @return {Promise.<*>}
    */
