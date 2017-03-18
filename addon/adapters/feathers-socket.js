@@ -3,6 +3,41 @@ import DS from "ember-data";
 
 const { inject, RSVP, run, computed, assert, get, typeOf } = Ember;
 
+
+function extend(ParentErrorClass, defaultMessage) {
+  if (ParentErrorClass.extend) {
+    return ParentErrorClass.extend({ message: defaultMessage });
+  }
+  let ErrorClass = function (errors, message) {
+    assert('`AdapterError` expects json-api formatted errors array.', Array.isArray(errors || []));
+    ParentErrorClass.call(this, errors, message || defaultMessage);
+  };
+  ErrorClass.prototype = Object.create(ParentErrorClass.prototype);
+
+  return ErrorClass;
+}
+
+
+export const ERRORS = {
+  NotAuthenticated: DS.UnauthorizedError,
+  Forbidden: DS.ForbiddenError,
+  BadRequest: DS.InvalidError,
+  PaymentError: extend(DS.AdapterError, 'The adapter operation failed due to a payment error'),
+  NotFound: DS.NotFoundError,
+  MethodNotAllowed: extend(DS.ForbiddenError, 'The adapter method is not allowed'),
+  NotAcceptable: extend(DS.AdapterError, 'The adapter sent unacceptable data'),
+  Timeout: DS.TimeoutError,
+  Conflict: DS.ConflictError,
+  LengthRequired: extend(DS.AdapterError, 'The adapter operation failed due to a missing request length'),
+  Unprocessable: extend(DS.InvalidError, 'The adapter rejected the commit due to semantic errors'),
+  TooManyRequests: extend(DS.AdapterError, 'The adapter operation failed because the rate limit has been reached'),
+  GeneralError: DS.ServerError,
+  NotImplemented: extend(DS.ServerError, 'The adapter operation failed due to the lack of its implementation on the server'),
+  BadGateway: extend(DS.ServerError, 'The server was acting as a gateway and received an invalid response from the upstream server'),
+  Unavailable: extend(DS.AdapterError, 'Down for maintenance'),
+};
+
+
 const METHODS_MAP = {
   create: { eventType: 'created', lock: true },
   update: { eventType: 'updated', lock: false },
@@ -194,9 +229,22 @@ export default DS.Adapter.extend({
     return data;
   },
 
+  // - `DS.InvalidError`
+  // - `DS.TimeoutError`
+  // - `DS.AbortError`
+  // - `DS.UnauthorizedError`
+  // - `DS.ForbiddenError`
+  // - `DS.NotFoundError`
+  // - `DS.ConflictError`
+  // - `DS.ServerError`
   handleServiceError(modelName, method, error) {
     // TODO: make the error ember friendly
-    return RSVP.reject(error);
+    let err = error;
+    if (err.name && ERRORS[err.name]) {
+      err = new ERRORS[err.name](toJsonApiErrors(err.errors, error), err.message);
+      err.originalError = error;
+    }
+    return RSVP.reject(err);
   },
 
   handleServiceEvent(eventType, modelName, message) {
@@ -209,24 +257,24 @@ export default DS.Adapter.extend({
     let id, record, an;
 
     switch (eventType) {
-      case 'created':
-      case 'updated':
-      case 'patched':
-        an = eventType === 'updated' ? 'an' : 'a';
-        this.debug && this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
-        store.push(store.normalize(modelName, message));
-        break;
+    case 'created':
+    case 'updated':
+    case 'patched':
+      an = eventType === 'updated' ? 'an' : 'a';
+      this.debug && this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
+      store.push(store.normalize(modelName, message));
+      break;
 
-      case 'removed':
-        id = message[this.primaryKeyOf(modelName)];
-        assert('The incoming message must have the id of deleted record but none was found', id);
-        this.debug && this.debug(`[${modelName}] unloading a deleted record from the store: %O`, message);
-        record = store.peekRecord(modelName, id);
-        record && store.unloadRecord(record);
-        break;
+    case 'removed':
+      id = message[this.primaryKeyOf(modelName)];
+      assert('The incoming message must have the id of deleted record but none was found', id);
+      this.debug && this.debug(`[${modelName}] unloading a deleted record from the store: %O`, message);
+      record = store.peekRecord(modelName, id);
+      record && store.unloadRecord(record);
+      break;
 
-      default:
-        assert(`Unknown event type: ${eventType}`);
+    default:
+      assert(`Unknown event type: ${eventType}`);
     }
   },
 
@@ -280,3 +328,29 @@ export default DS.Adapter.extend({
     return cache[modelName];
   },
 });
+
+
+
+function toJsonApiErrors(errors, owner) {
+  if (errors) {
+    return Object.keys(errors).map((key) => {
+      const error = errors[key];
+      const normalized = { meta: {} };
+      if (owner && owner.type === 'FeathersError') {
+        normalized.status = owner.code;
+        normalized.meta.className = owner.className;
+        normalized.meta.data = owner.data;
+      }
+      normalized.title = error.name;
+      normalized.detail = error.message;
+      if (error.path) {
+        normalized.meta.path = error.path;
+        normalized.source = {
+          pointer: `/data/attributes/${error.path.split('.').shift()}`,
+        }
+      }
+
+      return normalized;
+    });
+  }
+}
