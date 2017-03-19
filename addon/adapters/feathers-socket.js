@@ -18,23 +18,41 @@ function extend(ParentErrorClass, defaultMessage) {
 }
 
 
+export const NotAuthenticated = extend(DS.UnauthorizedError || DS.AdapterError, 'The adapter operation is unauthorized');
+export const Forbidden = extend(DS.ForbiddenError || DS.AdapterError, 'The adapter operation is forbidden');
+export const BadRequest = extend(DS.InvalidError);
+export const PaymentError = extend(DS.AdapterError, 'The adapter operation failed due to a payment error');
+export const NotFound = extend(DS.NotFoundError || DS.AdapterError, 'The adapter could not find the resource');
+export const MethodNotAllowed = extend(DS.ForbiddenError || DS.AdapterError, 'The adapter method is not allowed');
+export const NotAcceptable = extend(DS.AdapterError, 'The adapter sent unacceptable data');
+export const Timeout = extend(DS.TimeoutError);
+export const Conflict = extend(DS.ConflictError || DS.AdapterError, 'The adapter operation failed due to a conflict');
+export const LengthRequired = extend(DS.AdapterError, 'The adapter operation failed due to a missing request length');
+export const Unprocessable = extend(DS.InvalidError, 'The adapter rejected the commit due to semantic errors');
+export const TooManyRequests = extend(DS.AdapterError, 'The adapter operation failed because the rate limit has been reached');
+export const GeneralError = extend(DS.ServerError || DS.AdapterError, 'The adapter operation failed due to a server error');
+export const NotImplemented = extend(DS.ServerError || DS.AdapterError, 'The adapter operation failed due to the lack of its implementation on the server');
+export const BadGateway = extend(DS.ServerError || DS.AdapterError, 'The server was acting as a gateway and received an invalid response from the upstream server');
+export const Unavailable = extend(DS.AdapterError, 'The adapter operation failed because the server is down for maintenance');
+
+
 export const ERRORS = {
-  NotAuthenticated: DS.UnauthorizedError,
-  Forbidden: DS.ForbiddenError,
-  BadRequest: DS.InvalidError,
-  PaymentError: extend(DS.AdapterError, 'The adapter operation failed due to a payment error'),
-  NotFound: DS.NotFoundError,
-  MethodNotAllowed: extend(DS.ForbiddenError, 'The adapter method is not allowed'),
-  NotAcceptable: extend(DS.AdapterError, 'The adapter sent unacceptable data'),
-  Timeout: DS.TimeoutError,
-  Conflict: DS.ConflictError,
-  LengthRequired: extend(DS.AdapterError, 'The adapter operation failed due to a missing request length'),
-  Unprocessable: extend(DS.InvalidError, 'The adapter rejected the commit due to semantic errors'),
-  TooManyRequests: extend(DS.AdapterError, 'The adapter operation failed because the rate limit has been reached'),
-  GeneralError: DS.ServerError,
-  NotImplemented: extend(DS.ServerError, 'The adapter operation failed due to the lack of its implementation on the server'),
-  BadGateway: extend(DS.ServerError, 'The server was acting as a gateway and received an invalid response from the upstream server'),
-  Unavailable: extend(DS.AdapterError, 'Down for maintenance'),
+  NotAuthenticated,
+  Forbidden,
+  BadRequest,
+  PaymentError,
+  NotFound,
+  MethodNotAllowed,
+  NotAcceptable,
+  Timeout,
+  Conflict,
+  LengthRequired,
+  Unprocessable,
+  TooManyRequests,
+  GeneralError,
+  NotImplemented,
+  BadGateway,
+  Unavailable,
 };
 
 
@@ -212,19 +230,20 @@ export default DS.Adapter.extend({
     return this.get('feathers').serviceNameForModelName(modelName);
   },
 
-  serviceCall(typeOrModelName, method, ...args) {
+  serviceCall(typeOrModelName, methodName, ...args) {
     const modelName = typeOf(typeOrModelName) === 'string' ? typeOrModelName : typeOrModelName.modelName;
     const serviceName = this.feathersServiceNameFor(modelName);
-    return this.get('feathers').serviceCall(serviceName, method, ...args)
+    return this.get('feathers')
+      .serviceCall(serviceName, methodName, ...args)
       .then(
-        run.bind(this, 'handleServiceResponse', modelName, method),
-        run.bind(this, 'handleServiceError', modelName, method)
+        (response) => run(this, 'handleServiceResponse', response, { modelName, methodName }),
+        (error) => run(this, 'handleServiceError', error, { modelName, methodName })
       );
   },
 
-  handleServiceResponse(modelName, method, data) {
-    if (METHODS_MAP.hasOwnProperty(method) && METHODS_MAP[method].lock) {
-      this.discardOnce(modelName, METHODS_MAP[method].eventType, data);
+  handleServiceResponse(data, { modelName, methodName }) {
+    if (METHODS_MAP.hasOwnProperty(methodName) && METHODS_MAP[methodName].lock) {
+      this.discardOnce(modelName, METHODS_MAP[methodName].eventType, data);
     }
     return data;
   },
@@ -237,11 +256,14 @@ export default DS.Adapter.extend({
   // - `DS.NotFoundError`
   // - `DS.ConflictError`
   // - `DS.ServerError`
-  handleServiceError(modelName, method, error) {
-    // TODO: make the error ember friendly
+  handleServiceError(error, { modelName, methodName }) {
+    // TODO: make the error more ember friendly
     let err = error;
-    if (err.name && ERRORS[err.name]) {
-      err = new ERRORS[err.name](toJsonApiErrors(err.errors, error), err.message);
+    if (error.name && ERRORS[error.name]) {
+      const msg = this.get('feathers.appConfig.environment') === 'development'
+        ? `${error.message} [${modelName}#${methodName}]`
+        : error.message;
+      err = new ERRORS[error.name](toJsonApiErrors(error), msg);
       err.originalError = error;
     }
     return RSVP.reject(err);
@@ -329,9 +351,8 @@ export default DS.Adapter.extend({
   },
 });
 
-
-
-function toJsonApiErrors(errors, owner) {
+function toJsonApiErrors(owner) {
+  const { errors } = owner;
   if (errors) {
     return Object.keys(errors).map((key) => {
       const error = errors[key];
