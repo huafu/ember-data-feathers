@@ -1,8 +1,8 @@
 import Ember from "ember";
-import { io, default as feathers } from "feathers";
+import { default as feathers, io } from "feathers";
 import FeathersSocketAdapter from "../adapters/feathers-socket";
 
-const { computed, inject, run, String:{ pluralize, singularize }, RSVP, isArray } = Ember;
+const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray } = Ember;
 
 const TIMEOUT_REGEXP = /^Timeout of \d+ms /;
 const EVENT_TYPES = ['created', 'updated', 'patched', 'removed'];
@@ -248,6 +248,7 @@ class ServiceRegistry extends Array {
 export default Ember.Service.extend(Ember.Evented, {
   store: inject.service(),
 
+  config: computed.readOnly('appConfig.feathers'),
   socketUrl: computed.reads('config.socketUrl'),
   updateUsesPatch: computed.reads('config.updateUsesPatch'),
   queueMethodCalls: computed.reads('config.queueMethodCalls'),
