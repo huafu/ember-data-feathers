@@ -1381,7 +1381,7 @@ ember-cli-get-dependency-depth@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/ember-cli-get-dependency-depth/-/ember-cli-get-dependency-depth-1.0.0.tgz#e0afecf82a2d52f00f28ab468295281aec368d11"
 
-ember-cli-htmlbars-inline-precompile@^0.3.3:
+ember-cli-htmlbars-inline-precompile@^0.3.6:
   version "0.3.6"
   resolved "https://registry.yarnpkg.com/ember-cli-htmlbars-inline-precompile/-/ember-cli-htmlbars-inline-precompile-0.3.6.tgz#4095fe423f93102724c0725e4dd1a31f25e24de5"
   dependencies:
@@ -1532,7 +1532,7 @@ ember-cli-version-checker@^1.0.2, ember-cli-version-checker@^1.1.4, ember-cli-ve
   dependencies:
     semver "^5.3.0"
 
-ember-cli@^2.12.0:
+ember-cli@2.12.0:
   version "2.12.0"
   resolved "https://registry.yarnpkg.com/ember-cli/-/ember-cli-2.12.0.tgz#1dd081ef736570d76600ae6f7dfd043b55ac41f5"
   dependencies:
@@ -1705,7 +1705,7 @@ ember-runtime-enumerable-includes-polyfill@^1.0.0:
     ember-cli-babel "^5.1.6"
     ember-cli-version-checker "^1.1.6"
 
-ember-source@^2.12.0:
+ember-source@~2.12.0:
   version "2.12.0"
   resolved "https://registry.yarnpkg.com/ember-source/-/ember-source-2.12.0.tgz#5c7d09765a5c2c071382f3c02cf28b34d450e4ef"
   dependencies:
@@ -3088,7 +3088,7 @@ livereload-js@^2.2.2:
   version "2.2.2"
   resolved "https://registry.yarnpkg.com/livereload-js/-/livereload-js-2.2.2.tgz#6c87257e648ab475bc24ea257457edcc1f8d0bc2"
 
-loader.js@^4.1.0:
+loader.js@^4.2.3:
   version "4.2.3"
   resolved "https://registry.yarnpkg.com/loader.js/-/loader.js-4.2.3.tgz#845228877aa5317209e41f6c00d9bab36a6a4808"
 
@@ -4217,7 +4217,7 @@ socket.io-client@1.6.0:
     socket.io-parser "2.3.1"
     to-array "0.1.4"
 
-socket.io-client@1.7.3:
+socket.io-client@1.7.3, socket.io-client@^1.7.3:
   version "1.7.3"
   resolved "https://registry.yarnpkg.com/socket.io-client/-/socket.io-client-1.7.3.tgz#b30e86aa10d5ef3546601c09cde4765e381da377"
   dependencies:

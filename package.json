@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "ember-cli-babel": "^5.1.7",
-    "feathers-client": "2.0.0-pre.2"
+    "feathers-client": "2.0.0-pre.2",
+    "socket.io-client": "^1.7.3"
   },
   "devDependencies": {
     "broccoli-asset-rev": "^2.4.5",
