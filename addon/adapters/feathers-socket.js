@@ -1,5 +1,5 @@
-import Ember from "ember";
-import DS from "ember-data";
+import Ember from 'ember';
+import DS from 'ember-data';
 
 const { inject, RSVP, run, computed, assert, get, typeOf } = Ember;
 
@@ -18,7 +18,10 @@ function extend(ParentErrorClass, defaultMessage) {
 }
 
 
-export const NotAuthenticated = extend(DS.UnauthorizedError || DS.AdapterError, 'The adapter operation is unauthorized');
+export const NotAuthenticated = extend(
+  DS.UnauthorizedError || DS.AdapterError,
+  'The adapter operation is unauthorized'
+);
 export const Forbidden = extend(DS.ForbiddenError || DS.AdapterError, 'The adapter operation is forbidden');
 export const BadRequest = extend(DS.InvalidError);
 export const PaymentError = extend(DS.AdapterError, 'The adapter operation failed due to a payment error');
@@ -29,11 +32,26 @@ export const Timeout = extend(DS.TimeoutError);
 export const Conflict = extend(DS.ConflictError || DS.AdapterError, 'The adapter operation failed due to a conflict');
 export const LengthRequired = extend(DS.AdapterError, 'The adapter operation failed due to a missing request length');
 export const Unprocessable = extend(DS.InvalidError, 'The adapter rejected the commit due to semantic errors');
-export const TooManyRequests = extend(DS.AdapterError, 'The adapter operation failed because the rate limit has been reached');
-export const GeneralError = extend(DS.ServerError || DS.AdapterError, 'The adapter operation failed due to a server error');
-export const NotImplemented = extend(DS.ServerError || DS.AdapterError, 'The adapter operation failed due to the lack of its implementation on the server');
-export const BadGateway = extend(DS.ServerError || DS.AdapterError, 'The server was acting as a gateway and received an invalid response from the upstream server');
-export const Unavailable = extend(DS.AdapterError, 'The adapter operation failed because the server is down for maintenance');
+export const TooManyRequests = extend(
+  DS.AdapterError,
+  'The adapter operation failed because the rate limit has been reached'
+);
+export const GeneralError = extend(
+  DS.ServerError || DS.AdapterError,
+  'The adapter operation failed due to a server error'
+);
+export const NotImplemented = extend(
+  DS.ServerError || DS.AdapterError,
+  'The adapter operation failed due to the lack of its implementation on the server'
+);
+export const BadGateway = extend(
+  DS.ServerError || DS.AdapterError,
+  'The server was acting as a gateway and received an invalid response from the upstream server'
+);
+export const Unavailable = extend(
+  DS.AdapterError,
+  'The adapter operation failed because the server is down for maintenance'
+);
 
 
 export const ERRORS = {
@@ -169,7 +187,6 @@ export default DS.Adapter.extend({
   },
 
 
-
   // end of required methods ==================================================
 
 
@@ -282,6 +299,13 @@ export default DS.Adapter.extend({
     case 'created':
     case 'updated':
     case 'patched':
+      if (eventType === 'patched' && !store.peekRecord(modelName, message[this.primaryKeyOf(modelName)])) {
+        this.debug && this.debug(
+          `[${modelName}] NOT pushing a patched record that is not present in the store: %O`,
+          message
+        );
+        break;
+      }
       an = eventType === 'updated' ? 'an' : 'a';
       this.debug && this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
       store.push(store.normalize(modelName, message));
@@ -338,7 +362,7 @@ export default DS.Adapter.extend({
     const discarded = this.get('discarded')[eventType];
     const id = data[this.primaryKeyOf(modelName)];
     const key = modelName + ':' + id;
-    assert("Returned message should have an id", id);
+    assert('Returned message should have an id', id);
     return { discarded, key };
   },
 

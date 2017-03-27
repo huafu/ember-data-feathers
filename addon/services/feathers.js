@@ -1,6 +1,6 @@
-import Ember from "ember";
-import { default as feathers, io } from "feathers";
-import FeathersSocketAdapter from "../adapters/feathers-socket";
+import Ember from 'ember';
+import { default as feathers, io } from 'feathers';
+import FeathersSocketAdapter from '../adapters/feathers-socket';
 
 const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray } = Ember;
 
@@ -66,7 +66,12 @@ class ServiceMeta {
       }
     }
     this.setModelName(modelName, store).setupEvents();
+    this.owner.debug && this.owner.debug(
+      `Registered service '${this.name}' ${this.modelName ?
+        `linked to model '${this.modelName}'` : '(no model linked)'}.`
+    );
   }
+
 
   /**
    * Sets the model name
@@ -92,6 +97,7 @@ class ServiceMeta {
     EVENT_TYPES.forEach((eventType) => {
       this.service.on(eventType, this.eventHandlers[eventType]);
     });
+    this.owner.debug && this.owner.debug(`Listening for events on '${this.name}' service (${EVENT_TYPES.join(', ')}).`);
     return this;
   }
 
@@ -456,12 +462,15 @@ export default Ember.Service.extend(Ember.Evented, {
         this.get('_stats').push(stat);
       };
       return this.get(`services.${serviceName}`)[method](...args)
-        .then((response) => {
+        .then(
+          (response) => {
             logStat();
             this.set('isRunning', false);
             this.set('lastResponseAt', stat.end);
             this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`, uniqueItemOrAll(args), response
+              `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`,
+              uniqueItemOrAll(args),
+              response
             );
             return response;
           },
@@ -470,7 +479,9 @@ export default Ember.Service.extend(Ember.Evented, {
             this.set('isRunning', false);
             this.set('lastErrorAt', stat.end);
             this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`, uniqueItemOrAll(args), error
+              `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`,
+              uniqueItemOrAll(args),
+              error
             );
             return RSVP.reject(error);
           }
@@ -489,7 +500,11 @@ export default Ember.Service.extend(Ember.Evented, {
     this.set('lastEventAt', Date.now());
     this.debug && this.debug(`[${meta.name}][${eventType}] received %O`, message);
     if (meta.modelName) {
-      meta.storeAdapter instanceof FeathersSocketAdapter && meta.storeAdapter.handleServiceEvent(eventType, meta.modelName, message);
+      meta.storeAdapter instanceof FeathersSocketAdapter && meta.storeAdapter.handleServiceEvent(
+        eventType,
+        meta.modelName,
+        message
+      );
     }
   },
 
