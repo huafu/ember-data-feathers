@@ -246,6 +246,84 @@ class ServiceRegistry extends Array {
   }
 }
 
+const EventsQueue = Ember.Object.extend({
+  /**
+   * @type {Array.<EventsQueueItem>}
+   */
+  _items: computed({
+    get(){
+      return [];
+    }
+  }),
+
+  schedule(kind, service, message, callback) {
+    this.get('_items').unshift({ kind, service, message, callback });
+    run.schedule('actions', this, '_start');
+    return this;
+  },
+
+  discardLast(kind, service, matcher, throwIfNotFound = true) {
+    const items = this.get('_items');
+    const item = items.find((item) => {
+      return item.kind === kind && item.service === 'service' && matcher(item);
+    });
+    if (!item && throwIfNotFound) {
+      throw new Error(`Event to discard not found (kind: ${kind}, service: ${service})`);
+    }
+    if (item) {
+      items.splice(items.indexOf(item), 1);
+    }
+    return !!item;
+  },
+
+  _pause: 0,
+  paused: computed('_paused', {
+    get() {
+      return this.get('_paused') > 0;
+    },
+    set(key, value) {
+      const oldPaused = this.get(key);
+      value = this.incrementProperty('_paused', value ? 1 : -1) > 0;
+      if (oldPaused !== value && !value) {
+        run.schedule('actions', this, '_start');
+      }
+      return value;
+    }
+  }),
+
+  pause() {
+    this.set('paused', true);
+    return this;
+  },
+
+  start() {
+    this.set('paused', false);
+    return this;
+  },
+
+  _start() {
+    if (this.get('paused')) {
+      return;
+    }
+    const next = this.get('_items').pop();
+    if (next) {
+      if (next.callback) {
+        run.schedule('actions', next.callback);
+      }
+      run.schedule('actions', this, '_start');
+    }
+  },
+
+});
+
+/**
+ * @class EventsQueueItem
+ * @property {String} kind
+ * @property {String} service
+ * @property {Object} message
+ * @property {Function} callback
+ */
+
 /**
  * @class FeathersService
  * @extends {Ember.Service}
@@ -357,6 +435,16 @@ export default Ember.Service.extend(Ember.Evented, {
     }
   }).readOnly().volatile(),
 
+  /**
+   * @type {Array<EventsQueueItem>}
+   */
+  eventsQueue: computed({
+    get(){
+      return EventsQueue.create();
+    }
+  }),
+
+
   _runningProcess: RSVP.resolve(),
   enqueue(process) {
     if (!this.get('queueMethodCalls')) {
@@ -431,7 +519,7 @@ export default Ember.Service.extend(Ember.Evented, {
   setupService(name, { modelName } = {}) {
     const service = this.get('client').service(name);
     const registry = this.get('servicesRegistry');
-    return registry.register(name, { service, modelName, eventsHandler: run.bind(this, 'handleServiceEvent') });
+    return registry.register(name, { service, modelName, eventsHandler: run.bind(this, '_handleServiceEvent') });
   },
 
   /**
@@ -442,8 +530,10 @@ export default Ember.Service.extend(Ember.Evented, {
    * @returns {RSVP.Promise}
    */
   serviceCall(serviceName, method, ...args) {
+    const eventsQueue = this.get('eventsQueue');
     return this.enqueue(() => {
       const stat = Object.create(null);
+      eventsQueue.pause();
       this.set('isRunning', true);
       stat.service = serviceName;
       stat.method = method;
@@ -472,6 +562,7 @@ export default Ember.Service.extend(Ember.Evented, {
               uniqueItemOrAll(args),
               response
             );
+            eventsQueue.start();
             return response;
           },
           (error) => {
@@ -483,10 +574,23 @@ export default Ember.Service.extend(Ember.Evented, {
               uniqueItemOrAll(args),
               error
             );
+            eventsQueue.start();
             return RSVP.reject(error);
           }
         );
     });
+  },
+
+  /**
+   * Handles a service event
+   * @param {ServiceMeta} meta
+   * @param {String} eventType
+   * @param {*} message
+   */
+  _handleServiceEvent(meta, eventType, message) {
+    this.get('eventsQueue').schedule(
+      eventType, meta.name, message, run.bind(this, 'handleServiceEvent', ...arguments)
+    );
   },
 
   /**

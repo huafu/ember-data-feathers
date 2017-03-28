@@ -136,9 +136,9 @@ export default DS.Adapter.extend({
 
   feathers: inject.service(),
 
-  init() {
-    this._super(...arguments);
-    this.debug = this.get('feathers').debug;
+  debug() {
+    const feathers = this.get('feathers');
+    feathers.debug && feathers.debug(...arguments);
   },
 
   // required methods when extending an adapter ===============================
@@ -288,7 +288,7 @@ export default DS.Adapter.extend({
 
   handleServiceEvent(eventType, modelName, message) {
     if (this.shouldDiscard(modelName, eventType, message, true)) {
-      this.debug && this.debug(`[${modelName}] discarding one ${eventType} message: %O`, message);
+      this.debug(`[${modelName}] discarding one ${eventType} message: %O`, message);
       return;
     }
 
@@ -300,21 +300,21 @@ export default DS.Adapter.extend({
     case 'updated':
     case 'patched':
       if (eventType === 'patched' && !store.peekRecord(modelName, message[this.primaryKeyOf(modelName)])) {
-        this.debug && this.debug(
+        this.debug(
           `[${modelName}] NOT pushing a patched record that is not present in the store: %O`,
           message
         );
         break;
       }
       an = eventType === 'updated' ? 'an' : 'a';
-      this.debug && this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
+      this.debug(`[${modelName}] pushing ${an} ${eventType} record into the store: %O`, message);
       run.schedule('afterRender', store, 'push', store.normalize(modelName, message));
       break;
 
     case 'removed':
       id = message[this.primaryKeyOf(modelName)];
       assert('The incoming message must have the id of deleted record but none was found', id);
-      this.debug && this.debug(`[${modelName}] unloading a deleted record from the store: %O`, message);
+      this.debug(`[${modelName}] unloading a deleted record from the store: %O`, message);
       record = store.peekRecord(modelName, id);
       record && run.schedule('afterRender', store, 'unloadRecord', record);
       break;
