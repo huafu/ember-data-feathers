@@ -1,6 +1,6 @@
 {
   "name": "ember-data-feathers",
-  "version": "0.0.3-pre.1",
+  "version": "0.0.3-pre.2",
   "description": "Adapter and tools to connect to a FeathersJS backend.",
   "keywords": [
     "ember-addon",
