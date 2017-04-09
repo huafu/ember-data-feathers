@@ -1,8 +1,9 @@
+/* globals io */
 import Ember from 'ember';
 import { default as feathers } from 'feathers';
 import FeathersSocketAdapter from '../adapters/feathers-socket';
 
-const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray } = Ember;
+const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray, aliasMethod } = Ember;
 
 const TIMEOUT_REGEXP = /^Timeout of \d+ms /;
 const EVENT_TYPES = ['created', 'updated', 'patched', 'removed'];
@@ -352,7 +353,11 @@ export default Ember.Service.extend(Ember.Evented, {
   client: computed('socket', {
     get() {
       const socket = this.get('socket');
-      socket.on('pong', run.bind(this, 'handlePing'));
+      socket.on('pong', run.bind(this, 'handlePong'));
+      socket.on('connect', run.bind(this, 'set', 'followingTimeouts', 0));
+      socket.on('disconnect', run.bind(this, 'set', 'followingTimeouts', 3));
+      socket.on('reconnect_error', run.bind(this, 'handleSocketReconnectError'));
+      //socket.on('error', run.bind(this, 'handleSocketError'));
       const client = feathers()
         .configure(feathers.socketio(socket))
         .configure(feathers.hooks())
@@ -370,7 +375,7 @@ export default Ember.Service.extend(Ember.Evented, {
           }
           return original.call(socket, type, ...args);
         };
-        Object.defineProperty(emit, '_emberOwner', this);
+        Object.defineProperty(emit, '_emberOwner', { value: this });
         socket.emit = emit;
       }
 
@@ -382,9 +387,14 @@ export default Ember.Service.extend(Ember.Evented, {
     },
   }),
 
-  handlePing() {
+  handleSocketReconnectError(error) { // eslint-disable-line no-unused-vars
+    this.incrementProperty('followingTimeouts');
+  },
+
+  handlePong() {
     if (!this.isDestroyed) {
       this.set('lastPingAt', Date.now());
+      this.set('followingTimouts', 0);
     }
   },
 
@@ -480,13 +490,15 @@ export default Ember.Service.extend(Ember.Evented, {
       return 0;
     },
     set(key, value) {
-      if (value === 3) {
+      const old = this.cacheFor(key) || 0;
+      if (value === 3 && old < 3) {
         this.set('isOffline', true);
         this.trigger('becameOffline');
-      } else if (value === 0 && [undefined, null, 0].indexOf(this.cacheFor(key)) === -1) {
+      } else if (value === 0 && old !== 0) {
         this.set('isOffline', false);
         this.trigger('becameOnline');
       }
+      return value;
     }
   }),
   isOffline: false,
