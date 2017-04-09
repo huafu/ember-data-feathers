@@ -1,5 +1,5 @@
 import Ember from 'ember';
-import { default as feathers, io } from 'feathers';
+import { default as feathers } from 'feathers';
 import FeathersSocketAdapter from '../adapters/feathers-socket';
 
 const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray } = Ember;
@@ -458,6 +458,7 @@ export default Ember.Service.extend(Ember.Evented, {
       });
   },
 
+  lastError: null,
   lastPingAt: null,
   lastEventAt: null,
   lastResponseAt: null,
@@ -474,6 +475,21 @@ export default Ember.Service.extend(Ember.Evented, {
       return this.incrementProperty('_isRunning', value ? 1 : -1) > 0;
     }
   }),
+  followingTimeouts: computed({
+    get() {
+      return 0;
+    },
+    set(key, value) {
+      if (value === 3) {
+        this.set('isOffline', true);
+        this.trigger('becameOffline');
+      } else if (value === 0 && [undefined, null, 0].indexOf(this.cacheFor(key)) === -1) {
+        this.set('isOffline', false);
+        this.trigger('becameOnline');
+      }
+    }
+  }),
+  isOffline: false,
 
   /**
    * @type {ServiceRegistry}
@@ -543,11 +559,9 @@ export default Ember.Service.extend(Ember.Evented, {
         stat.end = Date.now();
         stat.time = stat.end - stat.start;
         stat.error = error;
-        if (error) {
-          if (TIMEOUT_REGEXP.test(error.message)) {
-            stat.timeouts++;
-            this.set('lastTimeoutAt', stat.end);
-          }
+        if (error && error.isTimeout) {
+          stat.timeouts++;
+          this.set('lastTimeoutAt', stat.end);
         }
         this.get('_stats').push(stat);
       };
@@ -555,6 +569,7 @@ export default Ember.Service.extend(Ember.Evented, {
         .then(
           (response) => {
             logStat();
+            this.set('followingTimeouts', 0);
             this.set('isRunning', false);
             this.set('lastResponseAt', stat.end);
             this.debug && this.debug(
@@ -566,8 +581,12 @@ export default Ember.Service.extend(Ember.Evented, {
             return response;
           },
           (error) => {
+            if ((error.isTimeout = TIMEOUT_REGEXP.test(error.message))) {
+              this.incrementProperty('followingTimeouts');
+            }
             logStat(error);
             this.set('isRunning', false);
+            this.set('lastError', error);
             this.set('lastErrorAt', stat.end);
             this.debug && this.debug(
               `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`,
