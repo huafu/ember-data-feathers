@@ -264,7 +264,7 @@ const EventsQueue = Ember.Object.extend({
 
   schedule(callback, detail) {
     this.get('_items').unshift({ detail, callback, since: Date.now() });
-    run.schedule('actions', this, '_start');
+    run.schedule('afterRender', this, '_start');
     return this;
   },
 
@@ -277,7 +277,7 @@ const EventsQueue = Ember.Object.extend({
       this._paused = (this._paused || 0) + (value ? 1 : -1);
       value = this._paused > 0;
       if (oldPaused !== value && !value) {
-        run.schedule('actions', this, '_start');
+        run.schedule('afterRender', this, '_start');
       }
       return value;
     }
