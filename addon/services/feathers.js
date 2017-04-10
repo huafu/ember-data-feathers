@@ -3,8 +3,9 @@ import Ember from 'ember';
 import { default as feathers } from 'feathers';
 import FeathersSocketAdapter from '../adapters/feathers-socket';
 
-const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray, aliasMethod } = Ember;
+const { computed, inject, run, String: { pluralize, singularize }, RSVP, isArray } = Ember;
 
+const DEFAULT_SOCKET_OPTIONS = { timeout: 10000 };
 const TIMEOUT_REGEXP = /^Timeout of \d+ms /;
 const EVENT_TYPES = ['created', 'updated', 'patched', 'removed'];
 
@@ -247,6 +248,10 @@ class ServiceRegistry extends Array {
   }
 }
 
+/**
+ * @class EventsQueue
+ * @extends {Ember.Object}
+ */
 const EventsQueue = Ember.Object.extend({
   /**
    * @type {Array.<EventsQueueItem>}
@@ -257,39 +262,29 @@ const EventsQueue = Ember.Object.extend({
     }
   }),
 
-  schedule(kind, service, message, callback) {
-    this.get('_items').unshift({ kind, service, message, callback });
+  schedule(callback, detail) {
+    this.get('_items').unshift({ detail, callback, since: Date.now() });
     run.schedule('actions', this, '_start');
     return this;
   },
 
-  discardLast(kind, service, matcher, throwIfNotFound = true) {
-    const items = this.get('_items');
-    const item = items.find((item) => {
-      return item.kind === kind && item.service === 'service' && matcher(item);
-    });
-    if (!item && throwIfNotFound) {
-      throw new Error(`Event to discard not found (kind: ${kind}, service: ${service})`);
-    }
-    if (item) {
-      items.splice(items.indexOf(item), 1);
-    }
-    return !!item;
-  },
-
-  _pause: 0,
-  paused: computed('_paused', {
+  paused: computed({
     get() {
-      return this.get('_paused') > 0;
+      return (this._paused || 0) > 0;
     },
     set(key, value) {
-      const oldPaused = this.get(key);
-      value = this.incrementProperty('_paused', value ? 1 : -1) > 0;
+      const oldPaused = this.cacheFor(key) || 0;
+      this._paused = (this._paused || 0) + (value ? 1 : -1);
+      value = this._paused > 0;
       if (oldPaused !== value && !value) {
         run.schedule('actions', this, '_start');
       }
       return value;
     }
+  }),
+
+  isIdle: computed('_items.length', 'paused', function () {
+    return !this.get('paused') && !this.get('_items.length')
   }),
 
   pause() {
@@ -303,7 +298,7 @@ const EventsQueue = Ember.Object.extend({
   },
 
   _start() {
-    if (this.get('paused')) {
+    if (this.get('paused') || !this.owner || this.owner.isDestroyed || this.owner.isDestroying) {
       return;
     }
     const next = this.get('_items').pop();
@@ -319,6 +314,7 @@ const EventsQueue = Ember.Object.extend({
 
 /**
  * @class EventsQueueItem
+ * @property {String} direction
  * @property {String} kind
  * @property {String} service
  * @property {Object} message
@@ -336,11 +332,12 @@ export default Ember.Service.extend(Ember.Evented, {
   config: computed.readOnly('appConfig.feathers'),
   socketUrl: computed.reads('config.socketUrl'),
   updateUsesPatch: computed.reads('config.updateUsesPatch'),
-  queueMethodCalls: computed.reads('config.queueMethodCalls'),
+  socketOptions: computed.reads('config.socketOptions'),
+  collectStats: computed.reads('config.collectStatistics'),
 
   socket: computed('socketUrl', {
     get() {
-      return io(this.get('socketUrl'));
+      return io(this.get('socketUrl'), this.get('socketOptions') || DEFAULT_SOCKET_OPTIONS);
     },
     set(key, value) {
       // ensure the old socket if any is closed
@@ -353,33 +350,16 @@ export default Ember.Service.extend(Ember.Evented, {
   client: computed('socket', {
     get() {
       const socket = this.get('socket');
-      socket.on('pong', run.bind(this, 'handlePong'));
-      socket.on('connect', run.bind(this, 'set', 'followingTimeouts', 0));
-      socket.on('disconnect', run.bind(this, 'set', 'followingTimeouts', 3));
-      socket.on('reconnect_error', run.bind(this, 'handleSocketReconnectError'));
-      //socket.on('error', run.bind(this, 'handleSocketError'));
-      const client = feathers()
+      ['pong', 'connect', 'disconnect', 'error'].forEach((type) => {
+        socket.on(type, run.bind(this, 'handleSocketManagerEvent', type));
+      });
+      return feathers()
         .configure(feathers.socketio(socket))
         .configure(feathers.hooks())
         // Use localStorage to store our login token
         .configure(feathers.authentication({
           storage: window.localStorage
         }));
-      // override the emitter to be able to given some extra attrs on logout
-      if (socket.emit._emberOwner !== this) {
-        const original = socket.emit;
-        const emit = (type, ...args) => {
-          if (type === 'logout' && this._logoutData) {
-            args.unshift(this._logoutData);
-            delete this._logoutData;
-          }
-          return original.call(socket, type, ...args);
-        };
-        Object.defineProperty(emit, '_emberOwner', { value: this });
-        socket.emit = emit;
-      }
-
-      return client;
     },
     set(key, value) {
       // TODO: teardown old object
@@ -387,15 +367,48 @@ export default Ember.Service.extend(Ember.Evented, {
     },
   }),
 
-  handleSocketReconnectError(error) { // eslint-disable-line no-unused-vars
-    this.incrementProperty('followingTimeouts');
+  handleSocketManagerEvent(eventType) {
+    if (this.isDestroyed || this.isDestroying) {
+      return;
+    }
+    this.debug && this.debug('socket.core-event', ...arguments);
+    switch (eventType) {
+    case 'error':
+      this.touch('error');
+      break;
+    case 'connect':
+      this.set('isOnline', true);
+      break;
+    case 'disconnect':
+      this.set('isOnline', false);
+      break;
+    case 'pong':
+      this.touch('pong');
+      break;
+    }
   },
 
-  handlePong() {
-    if (!this.isDestroyed) {
-      this.set('lastPingAt', Date.now());
-      this.set('followingTimouts', 0);
+  isOffline: computed.not('isOnline'),
+  isOnline: computed({
+    get() {
+      return false;
+    },
+    set(key, value){
+      const old = this.cacheFor(key);
+      const val = !!value;
+      if (old !== val) {
+        this.trigger(`became${value ? 'Online' : 'Offline'}`, old);
+      }
+      return val;
     }
+  }),
+
+  last: computed(function () {
+    return {};
+  }),
+  touch(what) {
+    const now = Date.now();
+    this.setProperties({ [`last.${what}`]: now, beat: now });
   },
 
   _stats: computed({
@@ -448,81 +461,33 @@ export default Ember.Service.extend(Ember.Evented, {
   /**
    * @type {Array<EventsQueueItem>}
    */
-  eventsQueue: computed({
-    get(){
-      return EventsQueue.create();
-    }
+  eventsQueue: computed(function () {
+    return EventsQueue.create({ owner: this });
   }),
 
-
-  _runningProcess: RSVP.resolve(),
-  enqueue(process) {
-    if (!this.get('queueMethodCalls')) {
-      return process();
-    }
-    return this._runningProcess = this._runningProcess
-      .then(process)
-      .catch((error) => {
-        this._runningProcess = process();
-        return RSVP.reject(error);
-      });
-  },
-
-  lastError: null,
-  lastPingAt: null,
-  lastEventAt: null,
-  lastResponseAt: null,
-  lastErrorAt: null,
-  lastTimeoutAt: null,
-  lastBeats: computed.collect('lastPingAt', 'lastEventAt', 'lastResponseAt', 'lastErrorAt'),
-  lastBeatAt: computed.max('lastBeats'),
-  _isRunning: 0,
-  isRunning: computed({
-    get() {
-      return this.get('_isRunning') > 0;
-    },
-    set(key, value) {
-      return this.incrementProperty('_isRunning', value ? 1 : -1) > 0;
-    }
+  runningPromise: null,
+  isIdle: computed('runningPromise', 'eventsQueue.isIdle', function () {
+    return !this.get('runningPromise') && this.get('eventsQueue.isIdle');
   }),
-  followingTimeouts: computed({
-    get() {
-      return 0;
-    },
-    set(key, value) {
-      const old = this.cacheFor(key) || 0;
-      if (value === 3 && old < 3) {
-        this.set('isOffline', true);
-        this.trigger('becameOffline');
-      } else if (value === 0 && old !== 0) {
-        this.set('isOffline', false);
-        this.trigger('becameOnline');
-      }
-      return value;
-    }
-  }),
-  isOffline: false,
+  isRunning: computed.not('isIdle'),
+
 
   /**
    * @type {ServiceRegistry}
    */
-  servicesRegistry: computed({
-    get() {
-      return new ServiceRegistry(this);
-    }
+  servicesRegistry: computed(function () {
+    return new ServiceRegistry(this);
   }),
 
-  services: computed({
-    get() {
-      const owner = this;
-      return Ember.Object.extend({
-        unknownProperty(key) {
-          if (!owner.isDestroyed && !owner.isDestroying) {
-            return owner.setupService(key);
-          }
-        },
-      }).create();
-    }
+  services: computed(function () {
+    const owner = this;
+    return Ember.Object.extend({
+      unknownProperty(key) {
+        if (!owner.isDestroyed && !owner.isDestroying) {
+          return this.set(key, owner.setupService(key));
+        }
+      },
+    }).create();
   }).readOnly(),
 
 
@@ -558,58 +523,61 @@ export default Ember.Service.extend(Ember.Evented, {
    * @returns {RSVP.Promise}
    */
   serviceCall(serviceName, method, ...args) {
-    const eventsQueue = this.get('eventsQueue');
-    return this.enqueue(() => {
-      const stat = Object.create(null);
-      eventsQueue.pause();
-      this.set('isRunning', true);
-      stat.service = serviceName;
-      stat.method = method;
-      stat.timeouts = 0;
-      stat.start = Date.now();
-      const logStat = (error) => {
-        stat.end = Date.now();
-        stat.time = stat.end - stat.start;
-        stat.error = error;
-        if (error && error.isTimeout) {
-          stat.timeouts++;
-          this.set('lastTimeoutAt', stat.end);
-        }
+    const queue = this.get('eventsQueue');
+    return this.set('runningPromise', new RSVP.Promise((resolve, reject) => {
+      const callback = run.bind(this, '_serviceCall', { serviceName, method, args }, resolve, reject);
+      queue.schedule(callback, { service: serviceName, method });
+    }));
+  },
+
+  _serviceCall({ serviceName, method, args }, resolve, reject) {
+    const queue = this.get('eventsQueue');
+    const gatherStats = this.get('collectStats');
+    queue.pause();
+    const stat = Object.create(null);
+    stat.service = serviceName;
+    stat.method = method;
+    stat.timeouts = 0;
+    stat.start = Date.now();
+    const logStat = (error) => {
+      stat.end = Date.now();
+      stat.time = stat.end - stat.start;
+      stat.error = error;
+      if (error && error.isTimeout) {
+        stat.timeouts++;
+      }
+      if (gatherStats) {
         this.get('_stats').push(stat);
-      };
-      return this.get(`services.${serviceName}`)[method](...args)
-        .then(
-          (response) => {
-            logStat();
-            this.set('followingTimeouts', 0);
-            this.set('isRunning', false);
-            this.set('lastResponseAt', stat.end);
-            this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`,
-              uniqueItemOrAll(args),
-              response
-            );
-            eventsQueue.start();
-            return response;
-          },
-          (error) => {
-            if ((error.isTimeout = TIMEOUT_REGEXP.test(error.message))) {
-              this.incrementProperty('followingTimeouts');
-            }
-            logStat(error);
-            this.set('isRunning', false);
-            this.set('lastError', error);
-            this.set('lastErrorAt', stat.end);
-            this.debug && this.debug(
-              `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`,
-              uniqueItemOrAll(args),
-              error
-            );
-            eventsQueue.start();
-            return RSVP.reject(error);
-          }
+      }
+    };
+
+    this.get(`services.${serviceName}`)[method](...args)
+      .then((response) => {
+        logStat();
+        this.touch('response');
+        this.debug && this.debug(
+          `[${serviceName}][${method}] sent %O <=> received %O in ${Math.round(stat.time)}ms`,
+          uniqueItemOrAll(args),
+          response
         );
-    });
+        return resolve(response);
+      })
+      .catch((error) => {
+          error.isTimeout = TIMEOUT_REGEXP.test(error.message);
+          logStat(error);
+          this.touch('error');
+          this.debug && this.debug(
+            `[${serviceName}][${method}] sent %O <=> ERROR %O in ${Math.round(stat.time)}ms`,
+            uniqueItemOrAll(args),
+            error
+          );
+          reject(error);
+        }
+      )
+      .finally(() => {
+        this.set('runningPromise', null);
+        queue.start();
+      });
   },
 
   /**
@@ -618,9 +586,10 @@ export default Ember.Service.extend(Ember.Evented, {
    * @param {String} eventType
    * @param {*} message
    */
-  _handleServiceEvent(meta, eventType, message) {
+  _handleServiceEvent(meta, eventType, message) { // eslint-disable-line no-unused-vars
     this.get('eventsQueue').schedule(
-      eventType, meta.name, message, run.bind(this, 'handleServiceEvent', ...arguments)
+      run.bind(this, 'handleServiceEvent', ...arguments),
+      { service: meta.name, eventType }
     );
   },
 
@@ -632,7 +601,7 @@ export default Ember.Service.extend(Ember.Evented, {
    */
   handleServiceEvent(meta, eventType, message)
   {
-    this.set('lastEventAt', Date.now());
+    this.touch('event');
     this.debug && this.debug(`[${meta.name}][${eventType}] received %O`, message);
     if (meta.modelName) {
       meta.storeAdapter instanceof FeathersSocketAdapter && meta.storeAdapter.handleServiceEvent(
