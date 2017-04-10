@@ -2,7 +2,7 @@ import Ember from 'ember';
 import DS from 'ember-data';
 import ERRORS from '../utils/feathers/errors';
 
-const { inject, RSVP, run, computed, assert, get, typeOf } = Ember;
+const { inject, RSVP, run, computed, assert, get, typeOf, isArray, $ } = Ember;
 
 
 const METHODS_MAP = {
@@ -184,16 +184,58 @@ export default DS.Adapter.extend({
     return this.get('feathers')
       .serviceCall(serviceName, methodName, ...args)
       .then(
-        (response) => run(this, 'handleServiceResponse', response, { modelName, methodName }),
-        (error) => run(this, 'handleServiceError', error, { modelName, methodName })
+        (response) => run(this, 'handleServiceResponse', response, { modelName, methodName, args, serviceName }),
+        (error) => run(this, 'handleServiceError', error, { modelName, methodName, args, serviceName })
       );
   },
 
-  handleServiceResponse(data, { modelName, methodName }) {
+  handleServiceResponse(data, options) {
+    const { modelName, methodName, args, serviceName } = options;
     if (METHODS_MAP.hasOwnProperty(methodName) && METHODS_MAP[methodName].lock) {
       this.discardOnce(modelName, METHODS_MAP[methodName].eventType, data);
     }
+    if (methodName === 'find' && !isArray(data) && !get(args, '0.query.$limit')) {
+      return this.handlePaginatedServiceResponse(data, {
+        serviceCall: run.bind(this.get('feathers'), 'serviceCall', serviceName, methodName),
+        serviceName,
+        params: $.extend(true, {}, args[0] || {}),
+        errorHandler: (error) => run(this, 'handleServiceError', error, { modelName, methodName, args, serviceName })
+      });
+    }
     return data;
+  },
+
+  handlePaginatedServiceResponse(
+    { total, limit, skip, data },
+    { serviceName, serviceCall, params, errorHandler, page = 1 },
+    results = []
+  ) {
+    const query = params.query || (params.query = {});
+    results.push(...data);
+    if (results.length >= total) {
+      this.debug(
+        `[${serviceName}] fetched last page (${page})`,
+        { total, limit, skip, 'data.length': data.length, 'results.length': results.length }
+      );
+      return results;
+    } else {
+      this.debug(
+        `[${serviceName}] fetched page ${page}`,
+        { total, limit, skip, 'data.length': data.length, 'results.length': results.length }
+      );
+    }
+    query.$skip = skip + data.length;
+    query.$limit = data.length;
+    return serviceCall(params).then(
+      (response) => run(
+        this,
+        'handlePaginatedServiceResponse',
+        response,
+        { serviceCall, params, errorHandler, page: page + 1 },
+        results
+      ),
+      errorHandler
+    );
   },
 
   // - `DS.InvalidError`
