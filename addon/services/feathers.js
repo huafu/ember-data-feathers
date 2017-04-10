@@ -264,7 +264,7 @@ const EventsQueue = Ember.Object.extend({
 
   schedule(callback, detail) {
     this.get('_items').unshift({ detail, callback, since: Date.now() });
-    run.schedule('afterRender', this, '_start');
+    run.schedule('actions', this, '_start');
     return this;
   },
 
@@ -277,7 +277,7 @@ const EventsQueue = Ember.Object.extend({
       this._paused = (this._paused || 0) + (value ? 1 : -1);
       value = this._paused > 0;
       if (oldPaused !== value && !value) {
-        run.schedule('afterRender', this, '_start');
+        run.schedule('actions', this, '_start');
       }
       return value;
     }
@@ -354,7 +354,7 @@ export default Ember.Service.extend(Ember.Evented, {
         socket.on(type, run.bind(this, 'handleSocketManagerEvent', type));
       });
       return feathers()
-        .configure(feathers.socketio(socket))
+        .configure(feathers.socketio(socket, this.get('socketOptions') || DEFAULT_SOCKET_OPTIONS))
         .configure(feathers.hooks())
         // Use localStorage to store our login token
         .configure(feathers.authentication({
