@@ -16,8 +16,8 @@ module.exports = {
 
     this.app = app;
 
-    app.import(app.bowerDirectory + '/dist/feathers.js');
-    app.import(app.bowerDirectory + '/socket.io-client/dist/socket.io.js');
+    app.import('bower_components/feathers-client/dist/feathers.js');
+    app.import('bower_components/socket.io-client/dist/socket.io.js');
     app.import('vendor/feathers.js', {
       exports: {
         feathers: ['default', 'io']
