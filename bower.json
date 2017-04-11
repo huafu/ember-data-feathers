@@ -1,4 +1,7 @@
 {
   "name": "ember-data-feathers",
-  "dependencies": {}
+  "dependencies": {
+    "socket.io-client": "^1.7.2",
+    "feathers-client": "2.0.0-pre.2"
+  }
 }

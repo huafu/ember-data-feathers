@@ -16,12 +16,8 @@ module.exports = {
 
     this.app = app;
 
-    let feathersPath = require('path').join('lib', 'client.js');
-    let ioPath = require('path').join('lib', 'index.js');
-    feathersPath = require.resolve('feathers-client').replace(feathersPath, '') + 'dist/feathers.js';
-    ioPath = require.resolve('socket.io-client').replace(ioPath, '') + 'dist/socket.io.js';
-    app.import(feathersPath);
-    app.import(ioPath);
+    app.import(app.bowerDirectory + '/dist/feathers.js');
+    app.import(app.bowerDirectory + '/socket.io-client/dist/socket.io.js');
     app.import('vendor/feathers.js', {
       exports: {
         feathers: ['default', 'io']

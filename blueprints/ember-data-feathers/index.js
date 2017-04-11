@@ -1,14 +1,12 @@
 /* eslint-env node */
-const RSVP = require('rsvp');
-
 module.exports = {
   normalizeEntityName() {
   },
 
   afterInstall() {
-    return RSVP.all([
-      this.addPackageToProject('feathers-client'),
-      this.addPackageToProject('socket.io-client'),
+    return this.addBowerPackagesToProject([
+      { name: 'feathers-client', target: '2.0.0-pre.2' },
+      { name: 'socket.io-client', target: '1.7.2' },
     ]);
   }
 };
